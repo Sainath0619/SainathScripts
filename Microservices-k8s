@@ -1,0 +1,298 @@
+SG- SMTP 25, 3000-10000, 80, 443, 22, 6443, SMTPS 465, 30000-32767
+t2.large
+apt update -y 
+---------
+Setups EKS cluster -
+
+IAM -  eks-user
+policy -  AmazonEC2FullAccess
+
+AmazonEKS_CNI_Policy
+
+AmazonEKSClusterPolicy
+
+AmazonEKSWorkerNodePolicy
+
+AWSCloudFormationFullAccess
+
+IAMFullAccess
+
+-----> One more policy we need to create with content as below
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": "eks:*",
+            "Resource": "*"
+        }
+    ]
+}
+------------------------------------------
+user-->Security credential and create acees kye --->
+------------------------------------------------
+
+mkdir scripts-->
+
+AWS cli
+kubectl
+eksctl --->
+
+sript.sh---.
+
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+sudo apt install unzip
+unzip awscliv2.zip
+sudo ./aws/install
+
+
+curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.19.6/2021-01-05/bin/linux/amd64/kubectl
+chmod +x ./kubectl
+sudo mv ./kubectl /usr/local/bin
+kubectl version --short --client
+
+curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+sudo mv /tmp/eksctl /usr/local/bin
+eksctl version
+
+chmoid +x script.sh
+
+------------------------------------------------
+aws configure
+
+-------------------------------------------------
+EKS Cluster--->
+
+eksctl create cluster --name=EKS-1 \
+                      --region=ap-south-1 \
+                      --zones=ap-south-1a,ap-south-1b \
+                      --without-nodegroup
+
+eksctl utils associate-iam-oidc-provider \
+    --region ap-south-1 \
+    --cluster EKS-1 \
+    --approve
+
+
+(add yuor KEY)
+eksctl create nodegroup --cluster=EKS-1 \
+                       --region=ap-south-1 \
+                       --name=node2 \
+                       --node-type=t3.medium \
+                       --nodes=3 \
+                       --nodes-min=2 \
+                       --nodes-max=4 \
+                       --node-volume-size=20 \
+                       --ssh-access \
+                       --ssh-public-key=DevOps \
+                       --managed \
+                       --asg-access \
+                       --external-dns-access \
+                       --full-ecr-access \
+                       --appmesh-access \
+                       --alb-ingress-access
+
+------------------------------------------------------------
+Jenkins --->
+
+java -17
+
+jen.sh-->
+ 
+sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc \
+  https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc]" \
+  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+  /etc/apt/sources.list.d/jenkins.list > /dev/null
+sudo apt-get update
+sudo apt-get install jenkins
+
+chmod +x jen.sh
+
+manage jenkins--> Available piguins 
+                    - docker & docker pipeline
+                    - k8s & k8s cli
+manage jenkins--> tools-->
+                    - docker installation-->
+                      - docker
+                      - install automatically
+                      - docker version - latest
+
+
+(jenkins file in git --- credential for docker)
+manage jenkins-->
+ 		credential
+               username - sainath
+               password - *******
+               ID - docker-cred
+
+manage jenkins-->
+                credential
+                username - 
+                password - git-Token
+                ID -git-cred
+
+
+                
+          
+
+-----------------------------------------------------
+Docker-->
+
+sudo chmod 666 /var/run/docker.sock
+
+-----------------------------------------------------
+Git
+ ---> create Token -->
+------------------------------------------
+Multibarnchpipeline--->
+             Branch sources-->Git
+                                  --> repository
+             Build comfigution
+              --> 
+
+             Scan Multibranch Pipeline Tiggers-->
+                    plugins--> multibranch webhook trigger
+                  REFRESH jenkins
+              
+             then--> Scan by webhook trigger-->trigger token--Sainath
+                   click on ?--> copy token and give token name
+
+            jenkins-url/23746234765635635=Sainath  ---COPY
+                   Apply
+                        
+
+      Git---> Settings-->webhooks-->addwebhook-->
+                            -->payloadURl-->Json-->addwebhook
+
+
+----------------------------------------------------------->
+CD-->
+ 
+ infrasteps-->
+         1. Create service Accnt-->
+           
+       --> Create name space webapps
+              k create namespace webapps
+
+     2.     svc.yaml-->
+                          apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins
+   namespace: webapps
+
+       k apply -f svc.yaml
+
+  3. Create role
+          role.yaml
+
+    
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-role
+  namespace: webapps
+rules:
+  - apiGroups:
+        - ""
+        - apps
+        - autoscaling
+        - batch
+        - extensions
+        - policy
+        - rbac.authorization.k8s.io
+    resources:
+      - pods
+      - componentstatuses
+      - configmaps
+      - daemonsets
+      - deployments
+      - events
+      - endpoints
+      - horizontalpodautoscalers
+      - ingress
+      - jobs
+      - limitranges
+      - namespaces
+      - nodes
+      - pods
+      - persistentvolumes
+      - persistentvolumeclaims
+      - resourcequotas
+      - replicasets
+      - replicationcontrollers
+      - serviceaccounts
+      - services
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+
+     k apply -f role.yaml -n webaaps
+
+4. BIND the role to service account
+
+  bind.yaml
+ 
+ apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-rolebinding
+  namespace: webapps 
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: app-role 
+subjects:
+- namespace: webapps 
+  kind: ServiceAccount
+  name: jenkins 
+
+        k apply -f bind.yaml -n webapps
+
+
+5. Genarate Token using srevice aCCOUNT in the namespace
+     
+ https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/#:~:text=To%20create%20a%20non%2Dexpiring,with%20that%20generated%20token%20data.
+
+Sec.yaml-->
+
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: mysecretname
+  annotations:
+    kubernetes.io/service-account.name: jenkins
+
+
+Apply--> -n webapps
+
+k get all -n webapps
+k describe secret mysecretname -n webapps
+
+  copy the token---->  save anywhere
+
+   Jenkins--->create Dumy pipeline---> pipeline--->Helloworld-->
+               two stages-->
+                   Stage 1 -->  deploy to k8s
+                               - pipeline syntax
+                               - configure k8s cli
+                               - credential -->secret---paste token
+                               - ID- k8s-token
+                               - k8s api-endpoints->cluster-->
+                                       -->copy api-service-endpoint
+                               - clustername-
+                               - Namespace
+        
+                               --> Generate pipelinescript
+                               --> Copy-->paste in steps of stage 1
+        and sh " k apply -f (filename)deployment-service.yaml
+                     sleep 30
+
+                    Stage-2 --> Verify deployment
+                          copy same iin stage1 steps and
+    sh " k get svc -n webapps"
+              
+ ---->COPY all pipeline and paste in main branch 
+           create JenkinsFile in microservices
