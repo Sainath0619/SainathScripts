@@ -1,0 +1,133 @@
+
+*****SONARQUBE*****
+----After testing
+jacoco---> java code covereage
+
+#
+Code Coverage:
+    80% of source code tested
+Code Quality Check:
+    code is not set properly
+    1. bugs
+    2. Vulnerability
+    3. code smell
+        poorly written
+#
+#
+community version
+developer version
+#
+
+###################
+---By Docker----------
+
+docker run -d --name sonar -p  9000:9000  
+sonarqube:lts-community
+
+IP:9000
+
+
+admin 
+admin
+
+# quality profile contain packages based on rules sonarqube find 
+        - custom quality profile
+
+# Quality Gates
+#jenkins---->
+        install pluguns
+            1. sonar scanner
+            2. jdk
+    global tool conf---->
+        add jdk and sonarqubescanner and maven3
+
+Git Repo--Petclinic
+
+pom.xml-->
+
+# jacoco-- generate the code coverage report#
+
+#
+create pipeline
+sample pipeline
+    tools{
+        jdk 'jdk11'
+        maven 'maven3'
+    }
+
+    stages(){
+        stage1(git checkout){
+         #--> PipelineSyntax
+                 ---Gitgit
+                 --RepoURL
+                 --unmark []
+                 Generate pipeline script
+                 copy and paste in pipeline
+
+        }
+
+        stage2(sonar analysis){
+         #--> PipelineSyntax
+                 sh 'mvn clean package'
+                 ''' mvn sonar:sonar -Dsonar-url=sonarqubeURL (#administration-->security--->Users---->update token copy token) -Dsonar.login=pasteToken -Dsonar.projectname=petclinic
+                 -Dsonar.java.binaries=. \
+                 -Dsonar.projectKey=petclinic'''
+                  
+        }
+    }
+     
+     Save and build now
+
+---------=============================------------------
+
+$ADVANCE
+
+     SAST  ---> Sonarqube
+
+     DAST  ---> after deploy application----> penetration testing
+        - vulnerable points
+
+     -----------Start------------------------------
+     
+     1 MASTER & 2 WORKER
+
+     vi values.yaml
+
+    --> helm repo add sonarqube hhtps://SonarSource.hithub.io/helm-chart-sonarqube
+    --> helm repo update
+
+    --> helm upgrade --install sonarqube sonarqube/sonarqube --namespace sonarqube -f values.yaml
+     
+    --> k get all -n sonarqube
+    --> get pv
+
+    --> k get all -n sonarqube
+       copy loadbalancer url:9000
+
+       admin
+       admin
+# ##################################
+
+environment{
+    $SONAR_SCANNER = tool 'sonarscanner'
+}
+
+
+Sonarqube analysis stage-->
+## How jenkins send report to sonarqube server
+ by url and credential
+ manage jenkins --> system---> sonarqube server--->name and url
+    ---> Token ----> jenkins(credential---> kind(text)
+    
+pipeline sysntax-->withsonarqubeenv--->
+select token and generate
+    copy and paste in pipeline
+withSonarQubeEnv('sonarqube'){
+    sh '$SONAR_SCANNER/bin/sonar-scanner -Dsonar.projectKey=petclinic -Dsonar.sources=. -Dsonar.host.url=http://  
+
+    
+
+
+  
+    
+     

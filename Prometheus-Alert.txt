@@ -1,0 +1,61 @@
+⚡ Step 4: Configure SMTP in Grafana (Email Settings)
+Edit Grafana config:
+
+sudo nano /etc/grafana/grafana.ini
+Uncomment + set:
+
+[smtp]
+enabled = true
+host = smtp.gmail.com:587
+user = techzeen10@gmail.com
+password = "bdof axxf khxi hzkq"   ; (App Password from Gmail)
+from_address = techzeen10@gmail.com
+from_name = Grafana
+startTLS_policy = OpportunisticStartTLS
+Save + restart Grafana:
+
+sudo systemctl restart grafana-server
+sudo systemctl status grafana-server
+
+
+
+
+⚡ Step 5: Create Contact Point in Grafana
+Open Grafana UI → Alerting → Contact Points → New Contact Point
+Type: Email
+Name: My Email
+Recipients: your@domain.com
+Save
+(Optional) Send Test Email → check inbox ✅
+
+
+
+
+⚡ Step 6: Create Dashboard in Grafana
+Open Grafana UI → Dashboards → New Dashboard → Add new panel
+
+In query box, write:
+
+rate(http_request_count[1m])
+Panel will show per-minute request rate.
+
+Go to Alert tab → Enable Alert.
+
+Condition: A > 0 → means request received.
+
+Notification → Select Contact Point: My Email.
+
+Save Dashboard ✅
+
+✅ Final Result
+Express app will expose metrics.
+Prometheus will scrape those metrics.
+Grafana dashboard will show request rate graph (rate(http_request_count[1m])).
+If a request comes in → condition A > 0 triggers.
+Grafana will immediately send you an email alert 🚨📧
+👉 Result Example:
+
+Open http://localhost:3001/ → request count increases.
+Grafana dashboard shows a spike 📈
+Your email inbox receives:
+"Alert firing: Express App Request Alert – at least 1 request detected!"

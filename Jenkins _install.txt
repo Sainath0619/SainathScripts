@@ -1,0 +1,21 @@
+
+
+
+sainath/
+
+sudo apt update
+sudo apt install openjdk-17-jdk -y
+
+https://get.jenkins.io/war-stable/2.504.3/jenkins.war
+
+nohup java -jar jenkins.war --httpPort=8080 > jenkins.log 2>&1 &
+
+ps aux | grep jenkins
+
+
+
+Client ID
+Ov23liQlDABpzIvFQlj4
+
+secret
+a06a310bbb9c239fbe180c975ae7e7e0d23ae112

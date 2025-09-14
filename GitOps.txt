@@ -1,0 +1,355 @@
+[https://youtu.be/iGJxNtjj_VE?si=tZacinhzpXvkSR3v]
+------------ARGOCD-----------------
+
+two repo 1CI,  2 CD---> menifest file
+
+pre build:
+    -diff security
+    - gitleaks
+    - compilation
+    - dependencies insatllation
+    - tyrivy - fs scan --- find out vulnerabilities in dependencies
+    - unit testing
+    - sonar analysis ---find vulnerabilities
+    - check compliencve of code (quality gates)
+
+build:
+    - docker image
+    - scan image
+    - push image to dockr repository
+    - new dockr image with tag
+    - update the tag in cd using webhook 
+
+post build
+
+
+-rollback is very easy   -------git revert
+
+=======================================================
+###///#####(26.00)
+https://github.com/jaiswaladi246/3-Tier-GitOps-CI.git
+CI Repo--
+    GithubAction--->Docker image
+
+    name: Node.js CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write   # required to push to CD repo with GITHUB_TOKEN or PAT
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js (LTS recommended)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '23'   # use LTS if you don't need v23
+
+      - name: Frontend Compilation (Syntax Check)
+        run: |
+          cd client
+          find . -name "*.js" -exec node --check {} +
+
+      - name: Backend Compilation (Syntax Check)
+        run: |
+          cd api
+          find . -name "*.js" -exec node --check {} +
+
+  gitleaks-scan:
+    runs-on: ubuntu-latest
+    needs: compile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Gitleaks Setup
+        uses: gitleaks/gitleaks-action@v2
+
+      - name: Gitleaks Scan
+        run: |
+          gitleaks detect --source ./client --exit-code 1
+          gitleaks detect --source ./api --exit-code 1
+
+  trivy_fs_scan:
+    runs-on: ubuntu-latest
+    needs: gitleaks-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (FS)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+  build_backend_docker_image_and_push:
+    runs-on: ubuntu-latest
+    needs: trivy_fs_scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Docker image (backend)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          push: true
+          tags: |
+            adijaiswal/backend:latest
+            adijaiswal/backend:${{ env.IMAGE_TAG }}
+
+  build_frontend_docker_image_and_push:
+    runs-on: ubuntu-latest
+    needs: trivy_fs_scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Docker image (frontend)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./client
+          file: ./client/Dockerfile
+          push: true
+          tags: |
+            adijaiswal/frontend:latest
+            adijaiswal/frontend:${{ env.IMAGE_TAG }}
+
+  trivy_image_scan:
+    runs-on: ubuntu-latest
+    needs:
+      - build_backend_docker_image_and_push
+      - build_frontend_docker_image_and_push
+    steps:
+      - name: Checkout (noop, keeps workspace consistent)
+        uses: actions/checkout@v4
+
+      - name: Run Trivy image scan for backend
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: adijaiswal/backend:${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: '0'                 # set to '1' to fail on vulns
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Run Trivy image scan for frontend
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: adijaiswal/frontend:${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+  update_cd_repo:
+    runs-on: ubuntu-latest
+    needs: trivy_image_scan
+    steps:
+      - name: Checkout CD repo
+        uses: actions/checkout@v4
+        with:
+          repository: jaiswaladi246/3-Tier-GitOps-CD
+          ref: main
+          token: ${{ secrets.CD_REPO_TOKEN }}
+          path: cd
+
+      - name: Bump images in manifests (safe)
+        working-directory: cd
+        env:
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          curl -sL https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 -o yq && sudo install yq /usr/local/bin/yq
+
+          # -- Safety cleanup: remove any accidental .spec.template from Service docs
+          yq -i '(. | select(.kind=="Service")) |= del(.spec.template)' k8s-prod/backend.yaml
+          yq -i '(. | select(.kind=="Service")) |= del(.spec.template)' k8s-prod/frontend.yaml
+
+          # -- Update ONLY Deployment images (backend)
+          yq -i '
+            (. | select(.kind=="Deployment")
+               | .spec.template.spec.containers[]
+               | select(.name=="backend")
+               | .image)
+            = "adijaiswal/backend:" + strenv(IMAGE_TAG)
+          ' k8s-prod/backend.yaml
+
+          # -- Update ONLY Deployment images (frontend)
+          yq -i '
+            (. | select(.kind=="Deployment")
+               | .spec.template.spec.containers[]
+               | select(.name=="frontend")
+               | .image)
+            = "adijaiswal/frontend:" + strenv(IMAGE_TAG)
+          ' k8s-prod/frontend.yaml
+
+      - name: Commit & push to CD repo
+        working-directory: cd
+        run: |
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "bump images to ${IMAGE_TAG}" || echo "no changes"
+          git push
+
+
+##############(28.00)
+https://github.com/jaiswaladi246/3-Tier-GitOps-CD.git
+CD
+
+EKS cluster--->
+
+AWS CLI
+clone---> https://github.com/jaiswaladi246/EKS-Terraform.git
+cd to folder
+
+install Terraform
+    Init and apply Terraform
+
+(32.00)
+setup cube config file
+steup kubectl
+eksctl
+OICD provider
+-----> go to cloudformation---> delete SA
+command for create SA---manually
+
+set ingress controller
+cert manager
+ebs csi driver
+
+cd ..
+
+mkdir ARGOCD
+cd
+k create ns ARGOCD
+execute command for argocd stable version
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.4.7/manifests/install.yaml
+
+k get all -n argocd
+k edit svc argocd-server -n argocd
+change type cluster to loadbalancer
+
+Take loadBalnacer URL of argocd and paste on browser it will take time 
+
+Argocd UI --->
+    admin
+    pass---> kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+    copy pass and paste and change password
+
+    logout and login
+
+    setting--->Repo--->connect---repo URL of Cd-->username(if repo is private) and token
+    --->connect
+
+    --------------------------------
+    vi sc.yaml--->
+        apiVersion: storage.k8s.io/v1 
+kind: StorageClass
+metadata:
+  name: ebs-sc
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+
+        k apply -f sc.yaml
+
+       ---------------------------------------
+
+ ARGO-UI-->
+    new application-->       name
+                             project name
+                             sync policy---automatic
+                                            PRUNE
+                                            Heal
+                              auto create namespace 
+                              repo URL
+                              branches
+                              path of the branches
+            Destination--->  cluster URL
+                             namespace
+
+                             --> create
+
+
+setup secrete--->
+##automatically take cganges from github--->
+
+      SECRETE="sainath123456"
+      k -n argocd pathch secrete argocd-secrete --type merge -p \
+      '{"stringData":{webhook.github.secrete":"'"$SECRET"'"}}'                                                
+            
+            copy argocd URL--->git repo-->setting-->
+                --->webhjook-->URL/api/webhook 
+           content type-->appljson 
+               secrete--> sainath123456
+               (enable ssl verification or disable)
+             just the push event
+             add webhook
+             click on webhooh--->recent deliveries
+
+             
+trigger CI--->
+ chnge anything in repo
+
+ Argocd-->usermanagement ingress---> copy hostname URL
+
+ godaddy--->
+    domain--->CNAME---->pate url--->save
+
+terminal---> nslookup paste URL
+
+         copy address---> A record---> paste
+
+certificate issue----->
+               k get ingress -n prod
+               k get certificate -n provider
+               k delete certificate -n provider
+
+             
